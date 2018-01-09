@@ -1,95 +1,73 @@
 defmodule Exturn.GameTest do
   use ExUnit.Case
 
-  alias ExTurn.Game
+  alias ExTurn.{Game, Player}
 
-  defmodule TicTacToe do
-    @behaviour Game
+  test "can add unique players until it reach the max permitted" do
+    game = start_game()
 
-    defstruct board: %{}, current_player: :circles, players: %{}
-
-    def info() do
-      %Game.Info{name: "TicTacToe", players: 2}
-    end
-
-    def init([player1, player2]) do
-      state = %TicTacToe{players: %{player1 => :circles, player2 => :crosses}}
-
-      {:ok, %Game{module: TicTacToe, players: [player1, player2], state: state}}
-    end
-
-    def play(%{state: state} = game, %{player: player, action: {:place, n, m}})
-        when n < 3 and n >= 0 and m < 3 and m >= 0 do
-      case Map.fetch(state.board, {n, m}) do
-        {:ok, val} ->
-          {:error, :already_placed, {n, m}}
-
-        :error ->
-          if state.players[player] == state.current_player do
-            new_board = Map.put(state.board, {n, m}, state.current_player)
-
-            new_state = %{
-              state
-              | board: new_board,
-                current_player: next_player(state.current_player)
-            }
-
-            {:ok, %{game | state: new_state}}
-          else
-            {:error, :not_your_turn, player}
-          end
-      end
-    end
-
-    def play(_state, action) do
-      {:error, :invalid_action, action}
-    end
-
-    defp next_player(:circles), do: :crosses
-    defp next_player(:crosses), do: :circles
-  end
-
-  test "info returns info" do
-    assert Game.info(TicTacToe) == %Game.Info{name: "TicTacToe", players: 2}
-  end
-
-  test "init succeeds with required number of players" do
-    assert {:ok, %Game{}} = Game.init(TicTacToe, [1, 2])
-  end
-
-  test "init fails when number of players is incorrect" do
-    assert {:error, :expected_players, 2} = Game.init(TicTacToe, [1])
-    assert {:error, :expected_players, 2} = Game.init(TicTacToe, [1, 2, 3])
+    assert :ok = Game.add_player(game, player1())
+    assert {:error, :player_already_added} == Game.add_player(game, player1())
+    assert :ok = Game.add_player(game, player2())
+    assert {:error, :too_many_players, 2} = Game.add_player(game, player3())
   end
 
   test "play succeed if it's player turn and action is valid" do
-    {:ok, game} = Game.init(TicTacToe, [1, 2])
+    game = start_game_with_players()
 
-    assert {:ok, new_game} = Game.play(game, %Game.Action{player: 1, action: {:place, 1, 1}})
-
-    assert {:ok, other_new_game} =
-             Game.play(new_game, %Game.Action{player: 2, action: {:place, 2, 1}})
+    assert :ok = Game.move(game, player1(), place(1, 1))
+    assert :ok = Game.move(game, player2(), place(2, 1))
   end
 
   test "play fails if it's not player turn" do
-    {:ok, game} = Game.init(TicTacToe, [1, 2])
+    game = start_game_with_players()
 
-    assert {:error, :not_your_turn, 2} =
-             Game.play(game, %Game.Action{player: 2, action: {:place, 1, 1}})
+    assert {:error, :not_your_turn} == Game.move(game, player2(), place(1, 1))
 
-    assert {:ok, new_game} = Game.play(game, %Game.Action{player: 1, action: {:place, 1, 1}})
+    assert :ok = Game.move(game, player1(), place(1, 1))
 
-    assert {:error, :not_your_turn, 1} =
-             Game.play(new_game, %Game.Action{player: 1, action: {:place, 1, 2}})
+    assert {:error, :not_your_turn} == Game.move(game, player1(), place(1, 2))
   end
 
   test "play fails if action is not valid turn" do
-    {:ok, game} = Game.init(TicTacToe, [1, 2])
+    game = start_game_with_players()
 
-    assert {:error, :invalid_action, _action} =
-             Game.play(game, %Game.Action{player: 1, action: {:place, 1, 3}})
+    assert {:error, :invalid_action} = Game.move(game, player1(), place(1, 3))
 
-    assert {:error, :invalid_action, _action} =
-             Game.play(game, %Game.Action{player: 1, action: {:invalid_action, 1, 1}})
+    assert {:error, :invalid_action} = Game.move(game, player1(), {:invalid_action, 1, 1})
   end
+
+  test "can check if game is finished and get a winner" do
+    game = start_game_with_players()
+
+    assert :ok = Game.move(game, player1(), place(0, 1))
+    assert :ok = Game.move(game, player2(), place(0, 2))
+    assert :ok = Game.move(game, player1(), place(1, 1))
+    assert :ok = Game.move(game, player2(), place(2, 2))
+    assert :playing == Game.state(game)
+
+    assert :ok = Game.move(game, player1(), place(2, 1))
+
+    assert {:winner, player1()} == Game.state(game)
+  end
+
+  defp place(n, m) do
+    TicTacToe.place(n, m)
+  end
+
+  defp start_game do
+    {:ok, game} = Game.start_link(TicTacToe)
+    game
+  end
+
+  defp start_game_with_players do
+    game = start_game()
+    :ok = Game.add_player(game, player1())
+    :ok = Game.add_player(game, player2())
+    game
+  end
+
+  defp player1, do: %Player{id: 1}
+  defp player2, do: %Player{id: 2}
+  defp player3, do: %Player{id: 3}
 end
